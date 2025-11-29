@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/config"
-	v1 "github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/controller/v1"
+	v1 "github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/controller/http/v1"
 )
 
 type App struct {
