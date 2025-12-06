@@ -40,3 +40,9 @@ func New(config PostgresConfig) (*Database, error) {
 		Pool: pool,
 	}, nil
 }
+
+func (d *Database) Close() {
+	if d.Pool != nil {
+		d.Pool.Close()
+	}
+}
