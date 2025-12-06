@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/clients/identity"
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
 type RoutesConfig struct {
-	AuthServicePath string `env:"AUTH_SERVICE_PATH" env-default:"http://localhost:8081"`
+	AuthServicePath      string `env:"AUTH_SERVICE_PATH" env-default:"http://localhost:8081"`
+	DirectoryServicePath string `env:"DIRECTORY_SERVICE_PATH" env-default:"http://localhost:8082"`
+	ChatServicePath      string `env:"CHAT_SERVICE_PATH" env-default:"http://localhost:8083"`
 }
 
 type Config struct {
@@ -19,6 +22,8 @@ type Config struct {
 	GHTimeout time.Duration `env:"GRACEFUL_SHUTDOWN_TIMEOUT" env-default:"15s"`
 
 	RoutesConfig
+
+	identity.IdentityServiceConfig
 }
 
 func ParseConfigFromEnv() (*Config, error) {

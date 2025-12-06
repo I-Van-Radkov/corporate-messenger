@@ -6,17 +6,19 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/clients/identity"
 	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/config"
 	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/proxy"
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	srv    *http.Server
-	routes []Route
+	srv        *http.Server
+	authClient identity.Client
+	routes     []Route
 }
 
-func NewServer(cfg *config.Config) *Server {
+func NewServer(cfg *config.Config, authClient identity.Client) *Server {
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%v", cfg.Port),
 		ReadTimeout:  cfg.ReadTimeout,
@@ -27,8 +29,9 @@ func NewServer(cfg *config.Config) *Server {
 	routes := LoadRoutes(cfg.RoutesConfig)
 
 	return &Server{
-		srv:    srv,
-		routes: routes,
+		srv:        srv,
+		authClient: authClient,
+		routes:     routes,
 	}
 }
 
@@ -39,8 +42,9 @@ func (s *Server) RegisterHandlers() error {
 	proxyHandlers := NewProxyHandlers(factory)
 
 	protected := router.Group("/")
-	public := router.Group("/")
+	protected.Use(AuthMiddleware(s.authClient))
 
+	public := router.Group("/")
 	for _, route := range s.routes {
 		pattern := strings.Replace(route.Pattern, "*", "{proxyPath:*}", 1)
 
@@ -51,6 +55,8 @@ func (s *Server) RegisterHandlers() error {
 
 		group.Any(pattern, proxyHandlers.ProxyTo(route.Target))
 	}
+
+	s.srv.Handler = router
 
 	return nil
 }

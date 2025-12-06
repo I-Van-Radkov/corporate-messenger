@@ -10,7 +10,10 @@ type Route struct {
 
 func LoadRoutes(cfg config.RoutesConfig) []Route {
 	var routes = []Route{
-		{Pattern: "/api/v1/auth/*", Target: cfg.AuthServicePath, Public: true},
+		{Pattern: "/api/v1/admin/*", Target: cfg.AuthServicePath + "/admin", Public: false},
+		{Pattern: "/api/v1/auth/*", Target: cfg.AuthServicePath + "/auth", Public: true},
+		{Pattern: "/api/v1/directory/*", Target: cfg.DirectoryServicePath + "/directory", Public: false},
+		{Pattern: "/api/v1/chats/*", Target: cfg.ChatServicePath + "/chats", Public: false},
 	}
 
 	return routes

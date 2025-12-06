@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/clients/identity"
 	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/config"
 	v1 "github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/controller/http/v1"
 )
@@ -21,7 +22,9 @@ type App struct {
 }
 
 func NewApp(cfg *config.Config) (*App, error) {
-	server := v1.NewServer(cfg)
+	authclient := identity.NewHTTPClient(cfg.IdentityServiceConfig)
+
+	server := v1.NewServer(cfg, authclient)
 	err := server.RegisterHandlers()
 	if err != nil {
 		return nil, fmt.Errorf("failed to register handlers: %w", err)
