@@ -2,20 +2,18 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/I-Van-Radkov/corporate-messenger/identity-service/internal/clients/directory"
 	"github.com/I-Van-Radkov/corporate-messenger/identity-service/internal/dto"
+	errModels "github.com/I-Van-Radkov/corporate-messenger/identity-service/internal/errors"
 	"github.com/I-Van-Radkov/corporate-messenger/identity-service/internal/models"
 	"github.com/I-Van-Radkov/corporate-messenger/identity-service/pkg/utils"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-)
-
-var (
-	ErrUserNotFound    = errors.New("user not found")
-	ErrInvalidPassword = errors.New("invalid password")
 )
 
 type AuthRepo interface {
@@ -39,14 +37,14 @@ func NewAuthUsecase(authrepo AuthRepo, dirClient directory.Client, authCfg AuthC
 	}
 }
 
-func (u *AuthUsecase) CreateAccount(ctx context.Context, input dto.CreateAccountRequest) (*dto.AccountResponse, error) {
+func (u *AuthUsecase) CreateAccount(ctx context.Context, input *dto.CreateAccountRequest) (*dto.AccountResponse, error) {
 	// Проверка на существование работника в directory-db
 	exists, err := u.dirClient.UserExists(ctx, input.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user from directory-service: %w", err)
 	}
 	if !exists {
-		return nil, ErrUserNotFound
+		return nil, errModels.ErrUserNotFound
 	}
 
 	// Хеширование пароля
@@ -85,10 +83,14 @@ func (u *AuthUsecase) CreateAccount(ctx context.Context, input dto.CreateAccount
 	return accountResponse, nil
 }
 
-func (u *AuthUsecase) Login(ctx context.Context, input dto.LoginRequest) (string, error) {
+func (u *AuthUsecase) Login(ctx context.Context, input *dto.LoginRequest) (string, error) {
 	// Проверка на наличие аккаунта
 	account, err := u.authrepo.FindByEmail(ctx, input.Email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", errModels.ErrUserNotFound
+		}
+
 		return "", fmt.Errorf("failed to find account by id from db: %w", err)
 	}
 
@@ -98,7 +100,7 @@ func (u *AuthUsecase) Login(ctx context.Context, input dto.LoginRequest) (string
 		return "", fmt.Errorf("failed to verify password: %w", err)
 	}
 	if !ok {
-		return "", ErrInvalidPassword
+		return "", errModels.ErrInvalidPassword
 	}
 
 	// Генерация токена
@@ -109,4 +111,32 @@ func (u *AuthUsecase) Login(ctx context.Context, input dto.LoginRequest) (string
 
 	// Возврат токена
 	return tokenString, nil
+}
+
+func (u *AuthUsecase) IntrospectToken(ctx context.Context, input *dto.IntrospectRequest) (*dto.IntrospectResponse, error) {
+	parsedToken, err := jwt.Parse(input.Token, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signed method: %v", t.Header["alg"])
+		}
+
+		return []byte(u.authCfg.JwtSecret), nil
+	})
+
+	output := &dto.IntrospectResponse{
+		Active: false,
+	}
+
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return output, nil
+		}
+		return nil, errModels.ErrInvalidToken
+	}
+
+	if !parsedToken.Valid {
+		return nil, errModels.ErrInvalidToken
+	}
+
+	output.Active = true
+	return output, nil
 }
