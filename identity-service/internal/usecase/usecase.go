@@ -18,9 +18,9 @@ import (
 
 type AuthRepo interface {
 	Create(ctx context.Context, account *models.Account) error
-	FindByID(ctx context.Context, accountID string) (*models.Account, error)
+	FindByID(ctx context.Context, accountID uuid.UUID) (*models.Account, error)
 	FindByEmail(ctx context.Context, email string) (*models.Account, error)
-	FindByUserID(ctx context.Context, userID string) (*models.Account, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Account, error)
 }
 
 type AuthUsecase struct {
