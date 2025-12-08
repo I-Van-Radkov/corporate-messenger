@@ -7,10 +7,10 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/I-Van-Radkov/corporate-messenger/chat-service/internal/dto"
-	"github.com/I-Van-Radkov/corporate-messenger/chat-service/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -22,24 +22,70 @@ type Client struct {
 	Conn      *websocket.Conn
 	Send      chan []byte
 
-	IsClosed bool
-	mu       sync.Mutex
+	IsClosed  atomic.Bool
+	closeOnce sync.Once
+	mu        sync.Mutex
+
+	cancelFunc context.CancelFunc
+	ctx        context.Context
+}
+
+func NewClient(userID uuid.UUID, conn *websocket.Conn) *Client {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	client := &Client{
+		UserID:     userID,
+		SessionID:  uuid.New(),
+		Conn:       conn,
+		Send:       make(chan []byte, 256),
+		ctx:        ctx,
+		cancelFunc: cancel,
+	}
+	client.IsClosed.Store(false)
+
+	return client
+}
+
+func (c *Client) close() {
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
+		c.IsClosed.Store(true)
+
+		if c.cancelFunc != nil {
+			c.cancelFunc()
+		}
+
+		if c.Conn != nil {
+			c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+			c.Conn.Close()
+		}
+
+		close(c.Send)
+	})
+}
+
+func (c *Client) getIsClosed() bool {
+	return c.IsClosed.Load()
 }
 
 type ChatUsecase interface {
 	SendMessage(ctx context.Context, msg *dto.MessageDTO) (string, error)
-	EditMessage(ctx context.Context, messageID, userID, content string) error
-	DeleteMessage(ctx context.Context, messageID, userID string) error
-	MarkAsRead(ctx context.Context, userID, chatID, messageID string) error
+	//EditMessage(ctx context.Context, messageID, userID, content string) error
+	//DeleteMessage(ctx context.Context, messageID, userID string) error
+	//MarkAsRead(ctx context.Context, userID, chatID, messageID string) error
 	GetChatMembers(ctx context.Context, chatID string) ([]*dto.ChatMemberDTO, error)
 	IsUserInChat(ctx context.Context, userID, chatID string) (bool, error)
 }
 
 type WebsocketHandlers struct {
 	chatUsecase ChatUsecase
-	upgrader    websocket.Upgrader
-	conns       map[uuid.UUID][]*Client
-	mu          sync.Mutex
+	factory     *MessageFactory
+
+	upgrader websocket.Upgrader
+	conns    map[uuid.UUID][]*Client
+	mu       sync.Mutex
 }
 
 func NewWebsockethandlers(chatUsecase ChatUsecase) *WebsocketHandlers {
@@ -51,16 +97,17 @@ func NewWebsockethandlers(chatUsecase ChatUsecase) *WebsocketHandlers {
 		WriteBufferSize: 1024,
 	}
 
+	factoryMsg := NewMessageFactory()
+
 	return &WebsocketHandlers{
 		chatUsecase: chatUsecase,
+		factory:     factoryMsg,
 		upgrader:    upgrader,
 		conns:       make(map[uuid.UUID][]*Client),
 	}
 }
 
 func (h *WebsocketHandlers) HandleConnection(c *gin.Context) {
-	ctx := context.Background()
-
 	userIdStr := c.GetString("user_id")
 	userId, err := uuid.Parse(userIdStr)
 	if err != nil {
@@ -74,14 +121,7 @@ func (h *WebsocketHandlers) HandleConnection(c *gin.Context) {
 		return
 	}
 
-	sessionId := uuid.New()
-
-	client := &Client{
-		UserID:    userId,
-		SessionID: sessionId,
-		Conn:      conn,
-		Send:      make(chan []byte),
-	}
+	client := NewClient(userId, conn)
 
 	h.addClient(client)
 
@@ -93,10 +133,10 @@ func (h *WebsocketHandlers) HandleConnection(c *gin.Context) {
 		return nil
 	})
 
-	go h.handlePingPong(ctx, client)
+	go h.handlePingPong(client)
 
-	go h.readPump(ctx, client)
-	go h.writePump(ctx, client)
+	go h.readPump(client)
+	go h.writePump(client)
 }
 
 func (h *WebsocketHandlers) addClient(client *Client) {
@@ -128,18 +168,7 @@ func (h *WebsocketHandlers) removeClient(userId, sessionId uuid.UUID) {
 	}
 }
 
-func (c *Client) close() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.IsClosed {
-		c.Conn.Close()
-		close(c.Send)
-		c.IsClosed = true
-	}
-}
-
-func (h *WebsocketHandlers) handlePingPong(ctx context.Context, client *Client) {
+func (h *WebsocketHandlers) handlePingPong(client *Client) {
 	ticker := time.NewTicker(25 * time.Second)
 	defer func() {
 		ticker.Stop()
@@ -149,21 +178,24 @@ func (h *WebsocketHandlers) handlePingPong(ctx context.Context, client *Client) 
 	for {
 		select {
 		case <-ticker.C:
+			if client.getIsClosed() {
+				return
+			}
+
 			err := client.Conn.WriteControl(websocket.PingMessage, []byte(time.Now().String()), time.Now().Add(10*time.Second))
 			if err != nil {
 				return
 			}
-		case <-ctx.Done():
+		case <-client.ctx.Done():
 			return
 		}
 	}
 }
 
-func (h *WebsocketHandlers) writePump(ctx context.Context, client *Client) {
+func (h *WebsocketHandlers) writePump(client *Client) {
 	ticker := time.NewTicker(50 * time.Second)
 	defer func() {
 		ticker.Stop()
-		client.close()
 	}()
 
 	for {
@@ -172,7 +204,9 @@ func (h *WebsocketHandlers) writePump(ctx context.Context, client *Client) {
 			client.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
 			if !ok {
-				client.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if client.cancelFunc != nil {
+					client.cancelFunc()
+				}
 				return
 			}
 
@@ -194,22 +228,26 @@ func (h *WebsocketHandlers) writePump(ctx context.Context, client *Client) {
 			if err := client.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
-		case <-ctx.Done():
+		case <-client.ctx.Done():
 			return
 		}
 	}
 }
 
-func (h *WebsocketHandlers) readPump(ctx context.Context, client *Client) {
+func (h *WebsocketHandlers) readPump(client *Client) {
 	defer func() {
-		h.removeClient(client.UserID, client.SessionID)
+		if client.cancelFunc != nil {
+			client.cancelFunc()
+		}
 	}()
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-client.ctx.Done():
 			return
 		default:
+			client.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
 			messageType, message, err := client.Conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -219,116 +257,122 @@ func (h *WebsocketHandlers) readPump(ctx context.Context, client *Client) {
 			}
 
 			if messageType == websocket.TextMessage {
-				h.handleMessage(client, message)
+				h.handleIncomingMessage(client, message)
 			}
 		}
 	}
 }
 
-func (h *WebsocketHandlers) handleMessage(client *Client, message []byte) {
-	var wsMessage WSMessage
+func (h *WebsocketHandlers) handleIncomingMessage(client *Client, message []byte) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	if err := json.Unmarshal(message, &wsMessage); err != nil {
-		h.sendError(client, "invalid message format")
+	var incoming dto.IncomingMessage
+	if err := json.Unmarshal(message, &incoming); err != nil {
+		h.sendError(client, dto.ErrInvalidMsgFormat, "Неверный формат сообщения")
 		return
 	}
 
-	log.Printf("Received message type: %s from user: %s", wsMessage.Type, client.UserID)
-
-	switch wsMessage.Type {
-	case "send_message":
-		h.handleSendMessage(client, wsMessage.Payload, wsMessage.ChatID)
-	// case "edit_message":
-	// 	h.handleEditMessage(client, wsMessage.Payload)
-	// case "delete_message":
-	// 	h.handleDeleteMessage(client, wsMessage.Payload)
-	// case "mark_as_read":
-	// 	h.handleMarkAsRead(client, wsMessage.Payload)
-	// case "typing":
-	// 	h.handleTyping(client, wsMessage.Payload)
+	switch incoming.Type {
+	case dto.TypeSendMessage:
+		h.handleSendMessage(ctx, client, incoming.Payload, incoming.ChatID)
 	default:
-		h.sendError(client, "unknown message type")
+		h.sendError(client, dto.ErrInvalidMsgType, fmt.Sprintf("Неподдерживаемый тип сообщения: %s", incoming.Type))
 	}
 }
 
-func (h *WebsocketHandlers) handleSendMessage(client *Client, payload json.RawMessage, chatID string) {
-	if ok, err := h.chatUsecase.IsUserInChat(context.Background(), client.UserID.String(), chatID); err != nil || !ok {
-		h.sendError(client, "access denied to chat")
+func (h *WebsocketHandlers) handleSendMessage(ctx context.Context, client *Client, payload json.RawMessage, chatId uuid.UUID) {
+	var req dto.SendMessageIncPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		h.sendError(client, dto.ErrInvalidPayload, "Неверный формат запроса")
 		return
 	}
 
-	var sendPayload WSSendMessagePayload
-	if err := json.Unmarshal(payload, &sendPayload); err != nil {
-		h.sendError(client, "invalid send message payload")
+	if chatId == uuid.Nil {
+		h.sendError(client, dto.ErrDataIsEmpty, "ID сообщения не может быть пустым")
+		return
+	}
+	if req.Content == "" {
+		h.sendError(client, dto.ErrDataIsEmpty, "Содержание сообщения не может быть пустым")
+		return
+	}
+	if req.Type == "" {
+		req.Type = "text"
+	}
+
+	hasAccess, err := h.chatUsecase.IsUserInChat(ctx, client.UserID.String(), chatId.String())
+	if err != nil || !hasAccess {
+		h.sendError(client, dto.ErrAccessDenied, "Нет доступа к чату")
 		return
 	}
 
-	message := &dto.MessageDTO{
-		ID:       uuid.New().String(),
-		ChatID:   chatID,
-		SenderID: client.UserID.String(),
-		Content:  sendPayload.Content,
-		Type:     models.MessageType(sendPayload.Type),
-		ReplyTo:  &sendPayload.ReplyTo,
+	msg := &dto.MessageDTO{
+		ID:       uuid.New(),
+		ChatID:   chatId,
+		SenderID: client.UserID,
+		Content:  req.Content,
+		Type:     req.Type,
+		ReplyTo:  req.ReplyTo,
 		SentAt:   time.Now(),
 	}
 
-	savedID, err := h.chatUsecase.SendMessage(context.Background(), message)
+	savedId, err := h.chatUsecase.SendMessage(ctx, msg)
 	if err != nil {
-		h.sendError(client, "failed to save message")
+		h.sendError(client, dto.ErrSaveFailed, "Не удалось сохранить сообщение")
 		return
 	}
 
-	// Добавляем ID сохраненного сообщения
-	message.ID = savedID
+	msg.ID = uuid.MustParse(savedId)
 
-	// Рассылаем участникам чата
-	h.broadcastToChat(chatID, WSEventMessage{
-		Event:     "message_sent",
-		Data:      message,
-		Timestamp: time.Now(),
-	})
+	outgoing := h.factory.NewOutgoingMessage(msg)
+
+	h.broadcastToChat(ctx, msg.ChatID, outgoing)
 }
 
-func (h *WebsocketHandlers) sendError(client *Client, message string) {
-	errorMsg := map[string]interface{}{
-		"type": "error",
-		"payload": map[string]string{
-			"message": message,
-		},
-		"timestamp": time.Now().Unix(),
-	}
+func (h *WebsocketHandlers) sendError(client *Client, code dto.ErrorType, message string) {
+	errorMsg := h.factory.NewError(code, message, "")
 
-	if data, err := json.Marshal(errorMsg); err == nil {
-		client.Send <- data
-	}
-}
-
-func (h *WebsocketHandlers) broadcastToChat(chatID string, event WSEventMessage) {
-	// TODO: Реализовать логику получения участников чата из БД
-	members, err := h.chatUsecase.GetChatMembers(context.Background(), chatID)
+	data, err := json.Marshal(errorMsg)
 	if err != nil {
-		log.Printf("Error getting members: %v", err)
 		return
 	}
 
+	select {
+	case client.Send <- data:
+		// отправлено
+	default:
+		go h.removeClient(client.UserID, client.SessionID)
+	}
+}
+
+func (h *WebsocketHandlers) broadcastToChat(ctx context.Context, chatID uuid.UUID, event *dto.OutgoingMessage) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("Error marshaling broadcast message: %v", err)
+		log.Printf("Failed to marshal event: %v", err)
 		return
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	members, err := h.chatUsecase.GetChatMembers(ctx, chatID.String())
+	if err != nil {
+		log.Printf("Failed to marshal event: %v", err)
+		return
+	}
+
 	for _, member := range members {
-		userID, err := uuid.Parse(member.UserID)
-		if err != nil {
+		clients, exists := h.conns[member.UserID]
+		if !exists {
+			// TODO: сохранение сообщения в оффлайн хранилище
 			continue
 		}
 
-		if clients, exists := h.conns[userID]; exists {
-			for _, client := range clients {
+		for _, client := range clients {
+			select {
+			case <-ctx.Done():
+				// таймаут
+			default:
 				select {
 				case client.Send <- data:
 					// отправлено

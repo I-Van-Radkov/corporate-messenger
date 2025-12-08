@@ -24,28 +24,6 @@ type ChangeRoleRequest struct {
 	Role   string `json:"role" validate:"required,oneof=owner admin member"`
 }
 
-// ChatMemberDTO - DTO участника чата
-type ChatMemberDTO struct {
-	UserID   string    `json:"user_id"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
-}
-
-// MessageDTO - DTO сообщения
-type MessageDTO struct {
-	ID        string             `json:"id"`
-	ChatID    string             `json:"chat_id"`
-	SenderID  string             `json:"sender_id"`
-	Content   string             `json:"content"`
-	Type      models.MessageType `json:"type"`
-	ReplyTo   *string            `json:"reply_to,omitempty"`
-	IsEdited  bool               `json:"is_edited"`
-	IsDeleted bool               `json:"is_deleted"`
-	SentAt    time.Time          `json:"sent_at"`
-	ReadByMe  bool               `json:"read_by_me"`
-	FileURLs  []FileInfoDTO      `json:"file_urls,omitempty"`
-}
-
 // FileInfoDTO - информация о файле
 type FileInfoDTO struct {
 	ID   string `json:"id"`
@@ -92,9 +70,4 @@ type ChatDetailDTO struct {
 	CreatedAt time.Time       `json:"created_at"`
 	Members   []ChatMemberDTO `json:"members"`
 	PinnedIDs []string        `json:"pinned_ids,omitempty"`
-}
-
-// MarkAsReadRequest - запрос на отметку прочитанным
-type MarkAsReadRequest struct {
-	LastReadMessageID string `json:"last_read_message_id" validate:"required,uuid"`
 }

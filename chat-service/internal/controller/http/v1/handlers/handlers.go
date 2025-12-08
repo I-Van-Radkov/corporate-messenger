@@ -42,6 +42,7 @@ func NewChatHandlers(chatusecase ChatUsecase) *Chathandlers {
 func (h *Chathandlers) CreateChat(c *gin.Context)
 func (h *Chathandlers) RemoveChat(c *gin.Context)
 func (h *Chathandlers) GetUserChats(c *gin.Context)
+func (h *Chathandlers) GetChatMessages(c *gin.Context)
 func (h *Chathandlers) AddMembers(c *gin.Context)
 func (h *Chathandlers) RemoveMember(c *gin.Context)
 func (h *Chathandlers) ChangeMemberRole(c *gin.Context)

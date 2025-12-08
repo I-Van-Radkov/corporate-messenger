@@ -51,7 +51,7 @@ func (s *Server) RegisterHandlers() error {
 		chats.GET("", chatHandlers.GetUserChats)
 		chats.POST("", chatHandlers.CreateChat)
 		chats.GET("/:chat_id/members", chatHandlers.GetChatMembers)
-		router.GET("/:chat_id") // ДОПИСАТЬ ЗАГРУЗКУ СООБЩЕНИЙ ЧАТА
+		router.GET("/:chat_id", chatHandlers.GetChatMessages)
 
 		// Только staff (admin/moderator/support)
 		staffOnly := chats.Group("")

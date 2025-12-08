@@ -37,22 +37,13 @@ func NewChatUsecase(chatRepo ChatRepo) *ChatUsecase {
 }
 
 func (u *ChatUsecase) SendMessage(ctx context.Context, msg *dto.MessageDTO) (string, error) {
-	var replyTo *uuid.UUID = nil
-	if msg.ReplyTo != nil {
-		replyUUID, err := uuid.Parse(*msg.ReplyTo)
-		if err != nil {
-			return "", err
-		}
-		replyTo = &replyUUID
-	}
-
 	message := &models.Message{
 		ID:        uuid.New(),
-		ChatID:    uuid.MustParse(msg.ChatID),
-		SenderID:  uuid.MustParse(msg.SenderID),
+		ChatID:    msg.ChatID,
+		SenderID:  msg.SenderID,
 		Content:   msg.Content,
 		Type:      models.MessageType(msg.Type),
-		ReplyTo:   replyTo,
+		ReplyTo:   msg.ReplyTo,
 		IsEdited:  false,
 		IsDeleted: false,
 		SentAt:    time.Now(),
@@ -75,7 +66,7 @@ func (u *ChatUsecase) GetChatMembers(ctx context.Context, chatID string) ([]*dto
 	var membersDTO []*dto.ChatMemberDTO
 	for _, member := range members {
 		membersDTO = append(membersDTO, &dto.ChatMemberDTO{
-			UserID:   member.ChatID.String(),
+			UserID:   member.ChatID,
 			Role:     string(member.Role),
 			JoinedAt: member.JoinedAt,
 		})
