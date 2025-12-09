@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	"github.com/I-Van-Radkov/corporate-messenger/directory-service/internal/dto"
@@ -28,7 +27,7 @@ func NewDirectoryRepo(db *pgxpool.Pool) *DirectoryRepo {
 func (r *DirectoryRepo) CreateDepartment(ctx context.Context, dep *models.Department) (uuid.UUID, error) {
 	query := r.builder.Insert("departments").
 		Columns("department_id", "name", "parent_id", "created_at", "updated_at").
-		Values(dep.DepartmentID.String(), dep.Name, nullString(dep.ParentID), dep.CreatedAt, dep.UpdatedAt).
+		Values(dep.DepartmentID, dep.Name, dep.ParentID, dep.CreatedAt, dep.UpdatedAt).
 		Suffix("RETURNING department_id")
 
 	sqlQuery, args, err := query.ToSql()
@@ -36,19 +35,19 @@ func (r *DirectoryRepo) CreateDepartment(ctx context.Context, dep *models.Depart
 		return uuid.Nil, err
 	}
 
-	var id string
+	var id uuid.UUID
 	err = r.db.QueryRow(ctx, sqlQuery, args...).Scan(&id)
 	if err != nil {
 		return uuid.Nil, err
 	}
 
-	return uuid.Parse(id)
+	return id, nil
 }
 
 func (r *DirectoryRepo) GetDepartmentByID(ctx context.Context, id uuid.UUID) (*models.Department, error) {
 	query := r.builder.Select("department_id, name, parent_id, created_at, updated_at").
 		From("departments").
-		Where(squirrel.Eq{"department_id": id.String()})
+		Where(squirrel.Eq{"department_id": id})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -58,8 +57,7 @@ func (r *DirectoryRepo) GetDepartmentByID(ctx context.Context, id uuid.UUID) (*m
 	row := r.db.QueryRow(ctx, sqlQuery, args...)
 
 	var dep models.Department
-	var parentID sql.NullString
-	err = row.Scan(&dep.DepartmentID, &dep.Name, &parentID, &dep.CreatedAt, &dep.UpdatedAt)
+	err = row.Scan(&dep.DepartmentID, &dep.Name, &dep.ParentID, &dep.CreatedAt, &dep.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -67,16 +65,10 @@ func (r *DirectoryRepo) GetDepartmentByID(ctx context.Context, id uuid.UUID) (*m
 		return nil, err
 	}
 
-	if parentID.Valid {
-		pid, _ := uuid.Parse(parentID.String)
-		dep.ParentID = &pid
-	}
-
 	return &dep, nil
 }
 
 func (r *DirectoryRepo) GetDepartments(ctx context.Context, limit, offset int) ([]*models.Department, int, error) {
-	// Count
 	countQuery := r.builder.Select("COUNT(*)").From("departments")
 	sqlCount, _, err := countQuery.ToSql()
 	if err != nil {
@@ -88,7 +80,6 @@ func (r *DirectoryRepo) GetDepartments(ctx context.Context, limit, offset int) (
 		return nil, 0, err
 	}
 
-	// List
 	query := r.builder.Select("department_id, name, parent_id, created_at, updated_at").
 		From("departments").
 		Limit(uint64(limit)).
@@ -108,14 +99,9 @@ func (r *DirectoryRepo) GetDepartments(ctx context.Context, limit, offset int) (
 	var deps []*models.Department
 	for rows.Next() {
 		var dep models.Department
-		var parentID sql.NullString
-		err = rows.Scan(&dep.DepartmentID, &dep.Name, &parentID, &dep.CreatedAt, &dep.UpdatedAt)
+		err = rows.Scan(&dep.DepartmentID, &dep.Name, &dep.ParentID, &dep.CreatedAt, &dep.UpdatedAt)
 		if err != nil {
 			return nil, 0, err
-		}
-		if parentID.Valid {
-			pid, _ := uuid.Parse(parentID.String)
-			dep.ParentID = &pid
 		}
 		deps = append(deps, &dep)
 	}
@@ -141,14 +127,9 @@ func (r *DirectoryRepo) GetAllDepartments(ctx context.Context) ([]*models.Depart
 	var deps []*models.Department
 	for rows.Next() {
 		var dep models.Department
-		var parentID sql.NullString
-		err = rows.Scan(&dep.DepartmentID, &dep.Name, &parentID, &dep.CreatedAt, &dep.UpdatedAt)
+		err = rows.Scan(&dep.DepartmentID, &dep.Name, &dep.ParentID, &dep.CreatedAt, &dep.UpdatedAt)
 		if err != nil {
 			return nil, err
-		}
-		if parentID.Valid {
-			pid, _ := uuid.Parse(parentID.String)
-			dep.ParentID = &pid
 		}
 		deps = append(deps, &dep)
 	}
@@ -158,7 +139,7 @@ func (r *DirectoryRepo) GetAllDepartments(ctx context.Context) ([]*models.Depart
 
 func (r *DirectoryRepo) DeleteDepartment(ctx context.Context, id uuid.UUID) error {
 	query := r.builder.Delete("departments").
-		Where(squirrel.Eq{"department_id": id.String()})
+		Where(squirrel.Eq{"department_id": id})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -171,7 +152,7 @@ func (r *DirectoryRepo) DeleteDepartment(ctx context.Context, id uuid.UUID) erro
 
 func (r *DirectoryRepo) GetDepartmentMembers(ctx context.Context, depID uuid.UUID, limit, offset int) ([]*models.User, int, error) {
 	countQuery := r.builder.Select("COUNT(*)").From("users").
-		Where(squirrel.Eq{"department_id": depID.String()})
+		Where(squirrel.Eq{"department_id": depID})
 	sqlCount, argsCount, err := countQuery.ToSql()
 	if err != nil {
 		return nil, 0, err
@@ -184,7 +165,7 @@ func (r *DirectoryRepo) GetDepartmentMembers(ctx context.Context, depID uuid.UUI
 
 	query := r.builder.Select("user_id, email, first_name, last_name, position, department_id, avatar_url, is_active, created_at, updated_at").
 		From("users").
-		Where(squirrel.Eq{"department_id": depID.String()}).
+		Where(squirrel.Eq{"department_id": depID}).
 		Limit(uint64(limit)).
 		Offset(uint64(offset))
 
@@ -214,7 +195,7 @@ func (r *DirectoryRepo) GetDepartmentMembers(ctx context.Context, depID uuid.UUI
 func (r *DirectoryRepo) CreateUser(ctx context.Context, user *models.User) (uuid.UUID, error) {
 	query := r.builder.Insert("users").
 		Columns("user_id, email, first_name, last_name, position, department_id, avatar_url, is_active, created_at, updated_at").
-		Values(user.UserID.String(), user.Email, user.FirstName, user.LastName, nullString(user.Position), nullString(user.DepartmentID), nullString(user.AvatarURL), user.IsActive, user.CreatedAt, user.UpdatedAt).
+		Values(user.UserID, user.Email, user.FirstName, user.LastName, user.Position, user.DepartmentID, user.AvatarURL, user.IsActive, user.CreatedAt, user.UpdatedAt).
 		Suffix("RETURNING user_id")
 
 	sqlQuery, args, err := query.ToSql()
@@ -222,19 +203,19 @@ func (r *DirectoryRepo) CreateUser(ctx context.Context, user *models.User) (uuid
 		return uuid.Nil, err
 	}
 
-	var id string
+	var id uuid.UUID
 	err = r.db.QueryRow(ctx, sqlQuery, args...).Scan(&id)
 	if err != nil {
 		return uuid.Nil, err
 	}
 
-	return uuid.Parse(id)
+	return id, nil
 }
 
 func (r *DirectoryRepo) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	query := r.builder.Select("user_id, email, first_name, last_name, position, department_id, avatar_url, is_active, created_at, updated_at").
 		From("users").
-		Where(squirrel.Eq{"user_id": id.String()})
+		Where(squirrel.Eq{"user_id": id})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -259,7 +240,7 @@ func (r *DirectoryRepo) GetUsers(ctx context.Context, filter *dto.GetUsersReques
 		From("users")
 
 	if filter.DepartmentID != nil {
-		qb = qb.Where(squirrel.Eq{"department_id": filter.DepartmentID.String()})
+		qb = qb.Where(squirrel.Eq{"department_id": *filter.DepartmentID})
 	}
 	if filter.IsActive != nil {
 		qb = qb.Where(squirrel.Eq{"is_active": *filter.IsActive})
@@ -302,7 +283,7 @@ func (r *DirectoryRepo) GetUsers(ctx context.Context, filter *dto.GetUsersReques
 
 func (r *DirectoryRepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	query := r.builder.Delete("users").
-		Where(squirrel.Eq{"user_id": id.String()})
+		Where(squirrel.Eq{"user_id": id})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -313,51 +294,22 @@ func (r *DirectoryRepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func nullString(v interface{}) interface{} {
-	switch val := v.(type) {
-	case *uuid.UUID:
-		if val == nil {
-			return nil
-		}
-		return val.String()
-	case *string:
-		if val == nil {
-			return nil
-		}
-		return *val
-	default:
-		return v
-	}
-}
-
 func scanUser(scanner pgx.Row) (*models.User, error) {
 	var user models.User
-	var position, departmentID, avatarURL sql.NullString
 	err := scanner.Scan(
 		&user.UserID,
 		&user.Email,
 		&user.FirstName,
 		&user.LastName,
-		&position,
-		&departmentID,
-		&avatarURL,
+		&user.Position,
+		&user.DepartmentID,
+		&user.AvatarURL,
 		&user.IsActive,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
-	}
-
-	if position.Valid {
-		user.Position = &position.String
-	}
-	if departmentID.Valid {
-		did, _ := uuid.Parse(departmentID.String)
-		user.DepartmentID = &did
-	}
-	if avatarURL.Valid {
-		user.AvatarURL = &avatarURL.String
 	}
 
 	return &user, nil
