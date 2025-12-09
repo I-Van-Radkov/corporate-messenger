@@ -71,7 +71,10 @@ func (c *Client) getIsClosed() bool {
 }
 
 type ChatUsecase interface {
-	SendMessage(ctx context.Context, msg *dto.MessageDTO) (string, error)
+	SendMsgToStorage(ctx context.Context, userId uuid.UUID, msg []byte)
+	GetMessagesFromStorage(ctx context.Context, userId uuid.UUID) [][]byte
+
+	SendMessageToDb(ctx context.Context, msg *dto.MessageDTO) (string, error)
 	//EditMessage(ctx context.Context, messageID, userID, content string) error
 	//DeleteMessage(ctx context.Context, messageID, userID string) error
 	//MarkAsRead(ctx context.Context, userID, chatID, messageID string) error
@@ -137,6 +140,24 @@ func (h *WebsocketHandlers) HandleConnection(c *gin.Context) {
 
 	go h.readPump(client)
 	go h.writePump(client)
+
+	h.downloadMessages(client)
+}
+
+func (h *WebsocketHandlers) downloadMessages(client *Client) {
+	messages := h.chatUsecase.GetMessagesFromStorage(context.Background(), client.UserID)
+	if len(messages) == 0 {
+		return
+	}
+
+	for _, msg := range messages {
+		select {
+		case client.Send <- msg:
+			// отправлено
+		default:
+			go h.removeClient(client.UserID, client.SessionID)
+		}
+	}
 }
 
 func (h *WebsocketHandlers) addClient(client *Client) {
@@ -316,7 +337,7 @@ func (h *WebsocketHandlers) handleSendMessage(ctx context.Context, client *Clien
 		SentAt:   time.Now(),
 	}
 
-	savedId, err := h.chatUsecase.SendMessage(ctx, msg)
+	savedId, err := h.chatUsecase.SendMessageToDb(ctx, msg)
 	if err != nil {
 		h.sendError(client, dto.ErrSaveFailed, "Не удалось сохранить сообщение")
 		return
@@ -364,7 +385,7 @@ func (h *WebsocketHandlers) broadcastToChat(ctx context.Context, chatID uuid.UUI
 	for _, member := range members {
 		clients, exists := h.conns[member.UserID]
 		if !exists {
-			// TODO: сохранение сообщения в оффлайн хранилище
+			h.chatUsecase.SendMsgToStorage(ctx, member.UserID, data)
 			continue
 		}
 

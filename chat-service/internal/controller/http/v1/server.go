@@ -35,7 +35,8 @@ func NewServer(port int, readTimeout, writeTimeout time.Duration, db *pgxpool.Po
 
 func (s *Server) RegisterHandlers() error {
 	chatRepo := adapter.NewChatRepo(s.db)
-	chatUsecase := usecase.NewChatUsecase(chatRepo)
+	msgStorage := adapter.NewOfflineStorage()
+	chatUsecase := usecase.NewChatUsecase(chatRepo, msgStorage)
 
 	wsHandlers := websocket.NewWebsockethandlers(chatUsecase)
 	chatHandlers := handlers.NewChatHandlers(chatUsecase)

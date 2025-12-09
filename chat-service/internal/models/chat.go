@@ -6,6 +6,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// var (
+// 	ErrMessagesNotFound = errors.New("messages not found")
+// )
+
 type ChatType string
 
 const (

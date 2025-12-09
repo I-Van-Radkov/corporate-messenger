@@ -26,17 +26,36 @@ type ChatRepo interface {
 	IsUserInChat(ctx context.Context, userID, chatID uuid.UUID) (bool, error)
 }
 
-type ChatUsecase struct {
-	chatRepo ChatRepo
+type OfflineMessageStorage interface {
+	SendMessage(userId uuid.UUID, data []byte)
+	GetMessages(userId uuid.UUID) ([][]byte, error)
 }
 
-func NewChatUsecase(chatRepo ChatRepo) *ChatUsecase {
+type ChatUsecase struct {
+	chatRepo   ChatRepo
+	msgStorage OfflineMessageStorage
+}
+
+func NewChatUsecase(chatRepo ChatRepo, msgStorage OfflineMessageStorage) *ChatUsecase {
 	return &ChatUsecase{
 		chatRepo: chatRepo,
 	}
 }
 
-func (u *ChatUsecase) SendMessage(ctx context.Context, msg *dto.MessageDTO) (string, error) {
+func (u *ChatUsecase) SendMsgToStorage(ctx context.Context, userId uuid.UUID, msg []byte) {
+	u.msgStorage.SendMessage(userId, msg)
+}
+
+func (u *ChatUsecase) GetMessagesFromStorage(ctx context.Context, userId uuid.UUID) [][]byte {
+	messages, err := u.msgStorage.GetMessages(userId)
+	if err != nil {
+		return nil
+	}
+
+	return messages
+}
+
+func (u *ChatUsecase) SendMessageToDb(ctx context.Context, msg *dto.MessageDTO) (string, error) {
 	message := &models.Message{
 		ID:        uuid.New(),
 		ChatID:    msg.ChatID,
