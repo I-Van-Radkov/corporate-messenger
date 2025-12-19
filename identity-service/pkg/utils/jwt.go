@@ -22,7 +22,7 @@ func SignToken(userId uuid.UUID, role models.AccountRole, jwtSecret string, jwtE
 
 	tokenString := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	signedToken, err := tokenString.SignedString(jwtSecret)
+	signedToken, err := tokenString.SignedString([]byte(jwtSecret))
 	if err != nil {
 		return "", fmt.Errorf("failed to sign token: %w", err)
 	}

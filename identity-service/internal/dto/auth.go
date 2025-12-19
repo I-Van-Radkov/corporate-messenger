@@ -40,3 +40,9 @@ type IntrospectRequest struct {
 type IntrospectResponse struct {
 	Active bool `json:"active"`
 }
+
+type UpdateAccountRequest struct {
+	Email    *string     `json:"email,omitempty" validate:"omitempty,email"`
+	Role     AccountRole `json:"role,omitempty" validate:"omitempty,oneof=user support admin moderator"`
+	IsActive *bool       `json:"is_active,omitempty"`
+}

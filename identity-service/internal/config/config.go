@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/I-Van-Radkov/corporate-messenger/identity-service/internal/clients/directory"
@@ -25,11 +26,16 @@ type Config struct {
 }
 
 func ParseConfigFromEnv() (*Config, error) {
-	cfg := &Config{}
+	var cfg Config
 
-	if err := cleanenv.ReadEnv(cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config from env: %w", err)
+	envPath := os.Getenv("ENV_PATH")
+	if envPath == "" {
+		envPath = "./config/.env"
 	}
 
-	return cfg, nil
+	if err := cleanenv.ReadConfig(envPath, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to read config file %s: %w", envPath, err)
+	}
+
+	return &cfg, nil
 }

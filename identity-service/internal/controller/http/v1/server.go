@@ -43,16 +43,28 @@ func (s *Server) RegisterHandlers(authCfg usecase.AuthConfig) error {
 	authHandlers := NewAuthHandlers(authUsecase)
 
 	router := gin.Default()
-	router.Use(ExtractUserInfoMiddleware())
+	router.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type,Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
 
 	adminAvail := router.Group("/admin")
+	adminAvail.Use(ExtractUserInfoMiddleware())
 	adminAvail.Use(RequireAdminOnly())
 	{
-		adminAvail.POST("/create", authHandlers.CreateAccountHandler)
-		adminAvail.GET("/accounts")
-		adminAvail.POST("/accounts/:id")
+		adminAvail.POST("/accounts", authHandlers.CreateAccountHandler)           // Create
+		adminAvail.GET("/accounts", authHandlers.ListAccountsHandler)             // List
+		adminAvail.PUT("/accounts/:id", authHandlers.UpdateAccountHandler)        // Update
+		adminAvail.DELETE("/accounts/:id", authHandlers.DeactivateAccountHandler) // Deactivate (soft delete)
 	}
-
 	userAvail := router.Group("/auth")
 	{
 		userAvail.POST("/login", authHandlers.LoginHandler)

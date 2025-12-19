@@ -21,6 +21,10 @@ type AuthRepo interface {
 	FindByID(ctx context.Context, accountID uuid.UUID) (*models.Account, error)
 	FindByEmail(ctx context.Context, email string) (*models.Account, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Account, error)
+
+	GetAllAccounts(ctx context.Context) ([]*models.Account, error)
+	DeactivateAccount(ctx context.Context, accountID uuid.UUID) error
+	UpdateAccount(ctx context.Context, account *models.Account) error
 }
 
 type AuthUsecase struct {
@@ -139,4 +143,74 @@ func (u *AuthUsecase) IntrospectToken(ctx context.Context, input *dto.Introspect
 
 	output.Active = true
 	return output, nil
+}
+
+// В internal/usecase/auth_usecase.go добавь:
+
+func (u *AuthUsecase) ListAccounts(ctx context.Context) ([]*dto.AccountResponse, error) {
+	accounts, err := u.authrepo.GetAllAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	responses := make([]*dto.AccountResponse, len(accounts))
+	for i, acc := range accounts {
+		responses[i] = &dto.AccountResponse{
+			AccountID: acc.AccountID.String(),
+			UserID:    acc.UserID.String(),
+			Email:     acc.Email,
+			Role:      dto.AccountRole(acc.Role),
+			IsActive:  acc.IsActive,
+			LastLogin: acc.LastLogin,
+			CreatedAt: acc.CreatedAt,
+		}
+	}
+	return responses, nil
+}
+
+func (u *AuthUsecase) UpdateAccount(ctx context.Context, accountID uuid.UUID, req *dto.UpdateAccountRequest) (*dto.AccountResponse, error) {
+	existing, err := u.authrepo.FindByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, errModels.ErrUserNotFound
+	}
+
+	// Обновляем только разрешённые поля
+	if req.Email != nil {
+		existing.Email = *req.Email
+	}
+	if req.Role != "" {
+		existing.Role = models.AccountRole(req.Role)
+	}
+	if req.IsActive != nil {
+		existing.IsActive = *req.IsActive
+	}
+
+	if err := u.authrepo.UpdateAccount(ctx, existing); err != nil {
+		return nil, err
+	}
+
+	return &dto.AccountResponse{
+		AccountID: existing.AccountID.String(),
+		UserID:    existing.UserID.String(),
+		Email:     existing.Email,
+		Role:      dto.AccountRole(existing.Role),
+		IsActive:  existing.IsActive,
+		LastLogin: existing.LastLogin,
+		CreatedAt: existing.CreatedAt,
+	}, nil
+}
+
+func (u *AuthUsecase) DeactivateAccount(ctx context.Context, accountID uuid.UUID) error {
+	existing, err := u.authrepo.FindByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return errModels.ErrUserNotFound
+	}
+
+	return u.authrepo.DeactivateAccount(ctx, accountID)
 }
