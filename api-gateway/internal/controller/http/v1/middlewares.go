@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"github.com/I-Van-Radkov/corporate-messenger/api-gateway/internal/clients/identity"
@@ -11,6 +12,7 @@ import (
 
 func AuthMiddleware(authClient identity.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(401, gin.H{"error": "Authorization required"})
@@ -27,6 +29,7 @@ func AuthMiddleware(authClient identity.Client) gin.HandlerFunc {
 
 		ok, err := authClient.IntrospectToken(context.Background(), token)
 		if err != nil {
+			log.Println(err.Error())
 			c.AbortWithStatusJSON(503, gin.H{
 				"error": "Indentity service unavailable",
 			})

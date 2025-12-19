@@ -36,7 +36,23 @@ func NewServer(cfg *config.Config, authClient identity.Client) *Server {
 }
 
 func (s *Server) RegisterHandlers() error {
-	router := gin.New()
+	router := gin.Default()
+
+	router.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
+		c.Header("Access-Control-Allow-Headers",
+			"Content-Type,Authorization,Accept,Origin,X-Requested-With,X-User-ID,X-User-Role")
+		c.Header("Access-Control-Expose-Headers",
+			"Content-Length,Content-Range,Authorization,X-User-ID,X-User-Role")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
 
 	factory := proxy.NewFactory()
 	proxyHandlers := NewProxyHandlers(factory)
@@ -45,8 +61,10 @@ func (s *Server) RegisterHandlers() error {
 	protected.Use(AuthMiddleware(s.authClient))
 
 	public := router.Group("/")
+
 	for _, route := range s.routes {
-		pattern := strings.Replace(route.Pattern, "*", "{proxyPath:*}", 1)
+		// Исправление: используем /*catchall для wildcard
+		pattern := strings.TrimSuffix(route.Pattern, "*") + "/*catchall"
 
 		group := public
 		if !route.Public {
@@ -57,7 +75,6 @@ func (s *Server) RegisterHandlers() error {
 	}
 
 	s.srv.Handler = router
-
 	return nil
 }
 

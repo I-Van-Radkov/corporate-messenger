@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -45,19 +46,32 @@ func (c *HTTPClient) IntrospectToken(ctx context.Context, token string) (bool, e
 		return false, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("failed to do reqest: %w", err)
+		return false, fmt.Errorf("failed to do request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Читаем тело ответа для отладки
+	bodyBytes, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("firectory service returned: %w", err)
+		// Пытаемся распарсить ошибку из ответа
+		var errorResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(bodyBytes, &errorResp); err == nil && errorResp.Error != "" {
+			return false, fmt.Errorf("identity service returned %d: %s", resp.StatusCode, errorResp.Error)
+		}
+		// Если не удалось распарсить JSON, возвращаем сырой ответ
+		return false, fmt.Errorf("identity service returned %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var userResp IntrospectResponse
-	if err := json.NewDecoder(resp.Body).Decode(&userResp); err != nil {
-		return false, fmt.Errorf("failed to decode data to UserResponse: %w", err)
+	if err := json.Unmarshal(bodyBytes, &userResp); err != nil {
+		return false, fmt.Errorf("failed to decode data to IntrospectResponse: %w", err)
 	}
 
 	return userResp.Active, nil
