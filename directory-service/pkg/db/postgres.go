@@ -31,7 +31,7 @@ func New(config PostgresConfig) (*Database, error) {
 	}
 
 	err = pool.Ping(ctx)
-	if err == nil {
+	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}

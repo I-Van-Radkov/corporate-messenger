@@ -28,6 +28,10 @@ func NewApp(cfg *config.Config) (*App, error) {
 	}
 
 	server := v1.NewServer(cfg.Port, cfg.ReadTimeout, cfg.WriteTimeout, db.Pool)
+	err = server.RegisterHandlers()
+	if err != nil {
+		return nil, fmt.Errorf("failed to register handlers: %w", err)
+	}
 
 	return &App{
 		httpServer: server,
