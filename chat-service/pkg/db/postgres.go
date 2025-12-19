@@ -19,9 +19,9 @@ type Database struct {
 	Pool *pgxpool.Pool
 }
 
-func New(cfg PostgresConfig) (*Database, error) {
+func New(config PostgresConfig) (*Database, error) {
 	dataSource := fmt.Sprintf("postgres://%v:%v@%v:%v/%v?sslmode=disable",
-		cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.DbName)
+		config.Username, config.Password, config.Host, config.Port, config.DbName)
 
 	ctx := context.Background()
 
@@ -32,6 +32,7 @@ func New(cfg PostgresConfig) (*Database, error) {
 
 	err = pool.Ping(ctx)
 	if err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 

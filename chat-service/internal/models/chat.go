@@ -6,84 +6,50 @@ import (
 	"github.com/google/uuid"
 )
 
-// var (
-// 	ErrMessagesNotFound = errors.New("messages not found")
-// )
-
 type ChatType string
-
-const (
-	ChatTypePrivate    ChatType = "private"
-	ChatTypeGroup      ChatType = "group"
-	ChatTypeDepartment ChatType = "department"
-)
-
+type MessageType string
 type MemberRole string
 
 const (
-	MemberRoleOwner  MemberRole = "owner"
-	MemberRoleAdmin  MemberRole = "admin"
-	MemberRoleMember MemberRole = "member"
+	ChatPrivate    ChatType = "private"
+	ChatGroup      ChatType = "group"
+	ChatDepartment ChatType = "department"
+
+	MsgText   MessageType = "text"
+	MsgFile   MessageType = "file"
+	MsgImage  MessageType = "image"
+	MsgSystem MessageType = "system"
+
+	RoleOwner  MemberRole = "owner"
+	RoleAdmin  MemberRole = "admin"
+	RoleMember MemberRole = "member"
 )
 
-type MessageType string
-
-const (
-	MessageTypeText   MessageType = "text"
-	MessageTypeFile   MessageType = "file"
-	MessageTypeImage  MessageType = "image"
-	MessageTypeSystem MessageType = "system"
-)
-
-// Chat - структура чата
 type Chat struct {
-	ID        uuid.UUID `db:"chat_id"`
-	Type      ChatType  `db:"type"`
-	Name      *string   `db:"name"` // NULL для private-чатов
-	CreatedBy uuid.UUID `db:"created_by"`
-	CreatedAt time.Time `db:"created_at"`
+	ChatID    uuid.UUID `json:"chat_id" db:"chat_id"`
+	Type      ChatType  `json:"type" db:"type"`
+	Name      *string   `json:"name,omitempty" db:"name"`
+	CreatedBy uuid.UUID `json:"created_by" db:"created_by"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
-// ChatMember - участник чата
 type ChatMember struct {
-	ChatID   uuid.UUID  `db:"chat_id"`
-	UserID   uuid.UUID  `db:"user_id"`
-	Role     MemberRole `db:"role"`
-	JoinedAt time.Time  `db:"joined_at"`
+	ChatID   uuid.UUID  `json:"chat_id" db:"chat_id"`
+	UserID   uuid.UUID  `json:"user_id" db:"user_id"`
+	Role     MemberRole `json:"role" db:"role"`
+	JoinedAt time.Time  `json:"joined_at" db:"joined_at"`
 }
 
-// Message - сообщение
 type Message struct {
-	ID        uuid.UUID   `db:"message_id"`
-	ChatID    uuid.UUID   `db:"chat_id"`
-	SenderID  uuid.UUID   `db:"sender_id"`
-	Content   string      `db:"content"`
-	Type      MessageType `db:"type"`
-	ReplyTo   *uuid.UUID  `db:"reply_to"` // NULL если не ответ
-	IsEdited  bool        `db:"is_edited"`
-	IsDeleted bool        `db:"is_deleted"`
-	SentAt    time.Time   `db:"sent_at"`
-}
-
-// MessageRead - прочитанные сообщения
-type MessageRead struct {
-	MessageID uuid.UUID `db:"message_id"`
-	UserID    uuid.UUID `db:"user_id"`
-	ReadAt    time.Time `db:"read_at"`
-}
-
-// UnreadCount - счётчик непрочитанных
-type UnreadCount struct {
-	UserID            uuid.UUID  `db:"user_id"`
-	ChatID            uuid.UUID  `db:"chat_id"`
-	UnreadCount       int        `db:"unread_count"`
-	LastReadMessageID *uuid.UUID `db:"last_read_message_id"`
-}
-
-// PinnedMessage - закреплённые сообщения
-type PinnedMessage struct {
-	ChatID    uuid.UUID `db:"chat_id"`
-	MessageID uuid.UUID `db:"message_id"`
-	PinnedAt  time.Time `db:"pinned_at"`
-	PinnedBy  uuid.UUID `db:"pinned_by"`
+	MessageID  uuid.UUID   `json:"message_id" db:"message_id"`
+	ChatID     uuid.UUID   `json:"chat_id" db:"chat_id"`
+	SenderID   uuid.UUID   `json:"sender_id" db:"sender_id"`
+	Content    string      `json:"content" db:"content"`
+	Type       MessageType `json:"type" db:"type"`
+	ReplyTo    *uuid.UUID  `json:"reply_to,omitempty" db:"reply_to"`
+	IsEdited   bool        `json:"is_edited" db:"is_edited"`
+	IsDeleted  bool        `json:"is_deleted" db:"is_deleted"`
+	SentAt     time.Time   `json:"sent_at" db:"sent_at"`
+	ReadCount  int         `json:"read_count,omitempty" db:"read_count"`
+	IsReadByMe bool        `json:"is_read_by_me,omitempty" db:"-"`
 }

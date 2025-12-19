@@ -78,8 +78,8 @@ type ChatUsecase interface {
 	//EditMessage(ctx context.Context, messageID, userID, content string) error
 	//DeleteMessage(ctx context.Context, messageID, userID string) error
 	//MarkAsRead(ctx context.Context, userID, chatID, messageID string) error
-	GetChatMembers(ctx context.Context, chatID string) ([]*dto.ChatMemberDTO, error)
-	IsUserInChat(ctx context.Context, userID, chatID string) (bool, error)
+	GetChatMembers(ctx context.Context, chatID uuid.UUID) (*dto.ChatMembers, error)
+	IsUserInChat(ctx context.Context, userID, chatID uuid.UUID) (bool, error)
 }
 
 type WebsocketHandlers struct {
@@ -111,15 +111,19 @@ func NewWebsockethandlers(chatUsecase ChatUsecase) *WebsocketHandlers {
 }
 
 func (h *WebsocketHandlers) HandleConnection(c *gin.Context) {
+	log.Println("я в handle conn!")
+
 	userIdStr := c.GetString("user_id")
 	userId, err := uuid.Parse(userIdStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": fmt.Errorf("failed to get user_id: %w", err)})
+		log.Println(err.Error())
+		c.JSON(400, gin.H{"error": fmt.Errorf("failed to get user_id")})
 		return
 	}
 
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		log.Println(err.Error())
 		c.JSON(400, gin.H{"error": fmt.Errorf("failed to upgrade: %w", err)})
 		return
 	}
@@ -142,6 +146,10 @@ func (h *WebsocketHandlers) HandleConnection(c *gin.Context) {
 	go h.writePump(client)
 
 	h.downloadMessages(client)
+
+	c.Status(http.StatusOK)
+
+	log.Println("соединение установлено!")
 }
 
 func (h *WebsocketHandlers) downloadMessages(client *Client) {
@@ -321,7 +329,7 @@ func (h *WebsocketHandlers) handleSendMessage(ctx context.Context, client *Clien
 		req.Type = "text"
 	}
 
-	hasAccess, err := h.chatUsecase.IsUserInChat(ctx, client.UserID.String(), chatId.String())
+	hasAccess, err := h.chatUsecase.IsUserInChat(ctx, client.UserID, chatId)
 	if err != nil || !hasAccess {
 		h.sendError(client, dto.ErrAccessDenied, "Нет доступа к чату")
 		return
@@ -376,13 +384,13 @@ func (h *WebsocketHandlers) broadcastToChat(ctx context.Context, chatID uuid.UUI
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	members, err := h.chatUsecase.GetChatMembers(ctx, chatID.String())
+	members, err := h.chatUsecase.GetChatMembers(ctx, chatID)
 	if err != nil {
 		log.Printf("Failed to marshal event: %v", err)
 		return
 	}
 
-	for _, member := range members {
+	for _, member := range members.Members {
 		clients, exists := h.conns[member.UserID]
 		if !exists {
 			h.chatUsecase.SendMsgToStorage(ctx, member.UserID, data)

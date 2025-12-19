@@ -82,11 +82,3 @@ type MessageDTO struct {
 	EditedAt  *time.Time `json:"edited_at,omitempty"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
-
-// ChatMemberDTO - участник чата
-type ChatMemberDTO struct {
-	UserID   uuid.UUID `json:"user_id"`
-	ChatID   uuid.UUID `json:"chat_id"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
-}

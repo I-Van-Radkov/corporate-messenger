@@ -3,71 +3,94 @@ package dto
 import (
 	"time"
 
-	"github.com/I-Van-Radkov/corporate-messenger/chat-service/internal/models"
+	"github.com/google/uuid"
 )
 
-// CreateChatRequest - запрос на создание чата
+type ChatType string
+type MessageType string
+type MemberRole string
+
+const (
+	ChatPrivate    ChatType = "private"
+	ChatGroup      ChatType = "group"
+	ChatDepartment ChatType = "department"
+
+	MsgText   MessageType = "text"
+	MsgFile   MessageType = "file"
+	MsgImage  MessageType = "image"
+	MsgSystem MessageType = "system"
+)
+
 type CreateChatRequest struct {
-	Type      string   `json:"type" validate:"required,oneof=private group department"`
-	Name      *string  `json:"name" validate:"required_if=Type group,required_if=Type department"` // обязательное для group/department
-	MemberIDs []string `json:"member_ids" validate:"required,min=1"`
+	Type      ChatType    `json:"type" binding:"required,oneof=private group department"`
+	Name      *string     `json:"name,omitempty"`
+	MemberIDs []uuid.UUID `json:"member_ids" binding:"required,min=1,dive,required"`
 }
 
-// AddMembersRequest - запрос на добавление участников
-type AddMembersRequest struct {
-	UserIDs []string `json:"user_ids" validate:"required,min=1"`
+type CreateChatResponse struct {
+	ChatID uuid.UUID `json:"chat_id"`
 }
 
-// ChangeRoleRequest - запрос на смену роли
-type ChangeRoleRequest struct {
-	UserID string `json:"user_id" validate:"required,uuid"`
-	Role   string `json:"role" validate:"required,oneof=owner admin member"`
+type GetUserChatsResponse struct {
+	Chats []ChatPreview `json:"chats"`
+	Total int           `json:"total"`
 }
 
-// FileInfoDTO - информация о файле
-type FileInfoDTO struct {
-	ID   string `json:"id"`
-	URL  string `json:"url"`
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-	Type string `json:"type"`
-}
-
-// ChatPreview - превью чата для списка
 type ChatPreview struct {
-	ID           string          `json:"id"`
-	Type         models.ChatType `json:"type"`
-	Name         *string         `json:"name,omitempty"`
-	AvatarURL    *string         `json:"avatar_url,omitempty"`
-	MemberCount  int             `json:"member_count"`
-	LastMessage  *MessageDTO     `json:"last_message,omitempty"`
-	UnreadCount  int             `json:"unread_count"`
-	LastActivity time.Time       `json:"last_activity"`
-	IsPinned     bool            `json:"is_pinned"`
-	IsMuted      bool            `json:"is_muted"`
+	ChatID uuid.UUID `json:"chat_id"`
+	Type   ChatType  `json:"type"`
+	Name   *string   `json:"name,omitempty"`
+	//UnreadCount     int             `json:"unread_count"`
+	LastMessage     *MessagePreview `json:"last_message,omitempty"`
+	LastMessageTime *time.Time      `json:"last_message_time,omitempty"`
 }
 
-// GetMessagesRequest - запрос на получение сообщений
+type MessagePreview struct {
+	MessageID uuid.UUID   `json:"message_id"`
+	Content   string      `json:"content"`
+	Type      MessageType `json:"type"`
+	SenderID  uuid.UUID   `json:"sender_id"`
+	SentAt    time.Time   `json:"sent_at"`
+}
+
 type GetMessagesRequest struct {
-	Limit  int     `form:"limit" validate:"max=100"`
-	Before *string `form:"before" validate:"omitempty,uuid"` // cursor
-	After  *string `form:"after" validate:"omitempty,uuid"`
+	ChatID uuid.UUID  `uri:"chat_id" binding:"required"`
+	Before *uuid.UUID `form:"before,omitempty"`
+	Limit  int        `form:"limit,default=50"`
 }
 
-// MessagesPageDTO - страница сообщений
-type MessagesPageDTO struct {
-	Messages      []MessageDTO `json:"messages"`
-	HasMoreBefore bool         `json:"has_more_before"`
-	HasMoreAfter  bool         `json:"has_more_after"`
+type GetMessagesResponse struct {
+	Messages []MessageDTO `json:"messages"`
+	Total    int          `json:"total"`
 }
 
-// ChatDetailDTO - детальная информация о чате
-type ChatDetailDTO struct {
-	ID        string          `json:"id"`
-	Type      models.ChatType `json:"type"`
-	Name      *string         `json:"name,omitempty"`
-	CreatedBy string          `json:"created_by"`
-	CreatedAt time.Time       `json:"created_at"`
-	Members   []ChatMemberDTO `json:"members"`
-	PinnedIDs []string        `json:"pinned_ids,omitempty"`
+// type SendMessageRequest struct {
+// 	Content  string            `json:"content" binding:"required"`
+// 	Type     models.MessageType `json:"type" binding:"required,oneof=text file image system"`
+// 	ReplyTo  *uuid.UUID        `json:"reply_to,omitempty"`
+// }
+
+// type SendMessageResponse struct {
+// 	MessageID uuid.UUID `json:"message_id"`
+// 	SentAt    time.Time `json:"sent_at"`
+// }
+
+type AddMembersRequest struct {
+	UserIDs []uuid.UUID `json:"user_ids" binding:"required,min=1,dive,required"`
+}
+
+type ChangeRoleRequest struct {
+	Role MemberRole `json:"role" binding:"required,oneof=admin member"`
+}
+
+type ChatMemberDTO struct {
+	UserID   uuid.UUID `json:"user_id"`
+	ChatID   uuid.UUID `json:"chat_id"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+type ChatMembers struct {
+	Members []ChatMemberDTO `json:"members"`
+	Total   int             `json:"total"`
 }
